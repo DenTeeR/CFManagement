@@ -23,6 +23,7 @@ Developed by **DenTeeR**
 - 🔒 SSL mode · 🛡 Security level · ⚡ Quick toggles (Always HTTPS, IPv6, Brotli, HTTP/3)
 - 🔥 One-tap **Under Attack** mode, dev mode, cache purge
 - ⛔ Firewall: block / allow / challenge by IP, CIDR or country
+- 🗑 Delete a domain (confirmed by typing its name)
 - 📤 DNS export (backup file sent in chat)
 - 🎨 **Design mode**: per-button and per-text **color** + **emoji** (premium or normal), all from inside the bot
 - 🌍 Persian & English · persistent bottom menu · colored buttons (latest Bot API)
@@ -63,7 +64,7 @@ Cloudflare → *My Profile → API Tokens → Create Custom Token* with:
 
 | Permission | Level |
 |---|---|
-| Zone → Zone | Read |
+| Zone → Zone | Read + Edit (Edit is needed to delete a domain) |
 | Zone → DNS | Edit |
 | Zone → Zone Settings | Edit |
 | Zone → Cache Purge | Purge |

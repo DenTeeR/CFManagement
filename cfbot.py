@@ -31,13 +31,14 @@ T = {
         export="خروجی DNS", ua="Under Attack", dev="حالت توسعه", new="رکورد جدید",
         e_content="ویرایش مقدار", e_name="ویرایش نام", e_ttl="ویرایش TTL", proxy="پروکسی",
         delete="حذف", sure="مطمئنی؟ این رکورد برای همیشه حذف می‌شود.", yes="بله، حذف کن",
-        cancel="انصراف", lang_t="زبان / Language", emo="ایموجی پرمیوم", design="حالت طراحی (شخصی‌سازی دکمه‌ها)", czm="دکمه‌های منوی پایین",
+        cancel="انصراف", lang_t="زبان / Language", emo="ایموجی پرمیوم", zdel="حذف دامنه", zdel_bad="❌ نام مطابقت نداشت. حذف لغو شد.",
+        zdel_ask="⚠️ <b>حذف دامنه {}</b> از کلودفلر\nاین کار برگشت‌پذیر نیست و همهٔ رکوردها و تنظیمات پاک می‌شود.\nبرای تأیید، نام دقیق دامنه را تایپ و ارسال کنید:", design="حالت طراحی (شخصی‌سازی دکمه‌ها)", czm="دکمه‌های منوی پایین",
         cz_btn="شخصی‌سازی همین صفحه", cz_hint="روی هر دکمه یا متن بزنید تا رنگ و ایموجی همان یکی را جدا تغییر دهید. (📝 = ایموجی داخل متن)",
         c_style="رنگ", c_emoji="ایموجی", c_blue="آبی", c_green="سبز", c_red="قرمز", c_def="بدون رنگ",
         c_emo="تنظیم ایموجی", c_none="حذف ایموجی", c_reset="بازنشانی", c_ask="یک ایموجی بفرستید (پرمیوم یا معمولی، هر کدام دلخواه):", emo_set="ثبت ایموجی‌ها", emo_test="تست", emo_reset="بازنشانی",
         emo_ask="یک پیام بفرستید که <b>ایموجی‌های پرمیوم</b> را به‌ترتیب زیر داشته باشد (همه یا فقط چند تای اول):",
         emo_info="برای نمایش ایموجی پرمیوم، مالک ربات باید پریمیوم داشته باشد یا برای ربات یوزرنیم اضافه از Fragment خریده شده باشد.", block="مسدودسازی جدید",
-        addtok="توکن API کلودفلر را بفرستید.\nدسترسی‌ها: Zone Read، DNS Edit، Zone Settings Edit، Cache Purge، Firewall Services Edit",
+        addtok="توکن API کلودفلر را بفرستید.\nدسترسی‌ها: Zone Read+Edit، DNS Edit، Zone Settings Edit، Cache Purge، Firewall Services Edit",
         adddns="رکورد را بفرستید:\n<code>TYPE name content proxied</code>\nمثال:\n<code>A sub.example.com 1.2.3.4 1</code>",
         ask_content="مقدار جدید را بفرستید (مثلاً IP):", ask_name="نام جدید را بفرستید (مثلاً sub.example.com):",
         ask_ttl="TTL را به ثانیه بفرستید یا <code>auto</code>:",
@@ -53,13 +54,14 @@ T = {
         export="Export DNS", ua="Under Attack", dev="Dev mode", new="New record",
         e_content="Edit content", e_name="Edit name", e_ttl="Edit TTL", proxy="Proxy",
         delete="Delete", sure="Are you sure? This record will be deleted permanently.", yes="Yes, delete",
-        cancel="Cancel", lang_t="Language / زبان", emo="Premium emoji", design="Design mode (customize buttons)", czm="Bottom menu buttons",
+        cancel="Cancel", lang_t="Language / زبان", emo="Premium emoji", zdel="Delete domain", zdel_bad="❌ Name did not match. Deletion cancelled.",
+        zdel_ask="⚠️ <b>Delete domain {}</b> from Cloudflare\nThis cannot be undone; all records and settings will be removed.\nTo confirm, type the exact domain name:", design="Design mode (customize buttons)", czm="Bottom menu buttons",
         cz_btn="Customize this screen", cz_hint="Tap any button or text to change its color and emoji individually. (📝 = emoji inside text)",
         c_style="Color", c_emoji="Emoji", c_blue="Blue", c_green="Green", c_red="Red", c_def="No color",
         c_emo="Set emoji", c_none="Remove emoji", c_reset="Reset", c_ask="Send any emoji (premium or normal):", emo_set="Set emoji", emo_test="Test", emo_reset="Reset",
         emo_ask="Send one message containing <b>premium emoji</b> in this order (all of them, or just the first few):",
         emo_info="Premium emoji need the bot owner to have Telegram Premium, or the bot to own an extra Fragment username.", block="New block rule",
-        addtok="Send your Cloudflare API token.\nPermissions: Zone Read, DNS Edit, Zone Settings Edit, Cache Purge, Firewall Services Edit",
+        addtok="Send your Cloudflare API token.\nPermissions: Zone Read+Edit, DNS Edit, Zone Settings Edit, Cache Purge, Firewall Services Edit",
         adddns="Send the record:\n<code>TYPE name content proxied</code>\nExample:\n<code>A sub.example.com 1.2.3.4 1</code>",
         ask_content="Send the new content (e.g. an IP):", ask_name="Send the new name (e.g. sub.example.com):",
         ask_ttl="Send TTL in seconds or <code>auto</code>:",
@@ -257,7 +259,7 @@ async def view(uid, v):
             [b(t(uid, "sec"), "sec", "primary", "shield"), b(t(uid, "tog"), "tog", "primary", "bolt")],
             [b(t(uid, "ua"), "ua", "danger" if ua else None, "fire"), b(t(uid, "dev"), "dev", "success" if dev else None, "dev")],
             [b(t(uid, "fw"), "fw", "primary", "ban"), b(t(uid, "export"), "ex", None, "export")],
-            [b(t(uid, "purge"), "pc", "danger", "trash")],
+            [b(t(uid, "purge"), "pc", "danger", "trash"), b(t(uid, "zdel"), "zdel", "danger", "ban")],
             bk("zones")])
 
     if v == "dns":
@@ -405,6 +407,8 @@ async def cb(q):
         st.update(wait="edit", field=x, prompt=t(uid, "ask_" + x), back="rec"); v = "ask"
     elif a == "new":
         st.update(wait="dns", prompt=t(uid, "adddns"), back="dns"); v = "ask"
+    elif a == "zdel":
+        st.update(wait="zdel", prompt=t(uid, "zdel_ask").format(html.escape(st["zones"].get(z, ""))), back="zone"); v = "ask"
     elif a == "fn":
         st.update(wait="fw", prompt=t(uid, "askfw"), back="fw"); v = "ask"
     elif a == "fd":
@@ -497,6 +501,16 @@ async def msg(m):
         except ValueError:
             pass
         v = "rec"
+    elif w == "zdel":
+        name = st.get("zones", {}).get(z, "")
+        if txt.lower() != name.lower():
+            await tg("sendMessage", chat_id=cid, text=t(uid, "zdel_bad")); v = "zone"
+        else:
+            j = await C(uid, "DELETE", f"/zones/{z}")
+            if j.get("success"):
+                await tg("sendMessage", chat_id=cid, text="✅ " + name + " — " + t(uid, "done")); st.pop("zone", None); v = "zones"
+            else:
+                await err(j); v = "zone"
     elif w == "fw":
         p = txt.split(); mode = "block"
         if len(p) > 1 and p[0].lower() in ("allow", "block", "challenge"):
