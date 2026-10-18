@@ -23,6 +23,8 @@ Developed by **DenTeeR**
 - 🔒 SSL mode · 🛡 Security level · ⚡ Quick toggles (Always HTTPS, IPv6, Brotli, HTTP/3)
 - 🔥 One-tap **Under Attack** mode, dev mode, cache purge
 - ⛔ Firewall: block / allow / challenge by IP, CIDR or country
+- 👥 Multi-admin: the owner can add/remove admins from Settings
+- 📶 Connection check for every saved Cloudflare account
 - 🗑 Delete a domain (confirmed by typing its name)
 - 📤 DNS export (backup file sent in chat)
 - 🎨 **Design mode**: per-button and per-text **color** + **emoji** (premium or normal), all from inside the bot

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # CF Control — Cloudflare manager Telegram bot (single file, raw Bot API)
 # Developed by DenTeeR  ·  MIT License
-import os, re, json, html, asyncio, httpx
+import os, re, json, html, time, asyncio, httpx
 
 TOKEN = os.environ["BOT_TOKEN"]
 ADMINS = {int(x) for x in os.environ["ADMIN_IDS"].split(",")}
@@ -17,7 +17,8 @@ EMO = {
     "lock": ("", "🔒"), "fire": ("", "🔥"), "trash": ("", "🗑"), "back": ("", "◀️"),
     "gear": ("", "⚙️"), "lang": ("", "🌍"), "dev": ("", "🛠"), "ok": ("", "✅"),
     "edit": ("", "✏️"), "shield": ("", "🛡"), "export": ("", "📤"), "ban": ("", "⛔"),
-    "bolt": ("", "⚡️"), "tag": ("", "🏷"),
+    "bolt": ("", "⚡️"), "tag": ("", "🏷"), "green": ("", "🟢"), "yellow": ("", "🟡"), "red": ("", "🔴"),
+    "target": ("", "🎯"), "time": ("", "⏱"), "warn": ("", "⚠️"), "puzzle": ("", "🧩"), "user": ("", "👤"), "crown": ("", "👑"),
 }
 
 T = {
@@ -31,7 +32,10 @@ T = {
         export="خروجی DNS", ua="Under Attack", dev="حالت توسعه", new="رکورد جدید",
         e_content="ویرایش مقدار", e_name="ویرایش نام", e_ttl="ویرایش TTL", proxy="پروکسی",
         delete="حذف", sure="مطمئنی؟ این رکورد برای همیشه حذف می‌شود.", yes="بله، حذف کن",
-        cancel="انصراف", lang_t="زبان / Language", emo="ایموجی پرمیوم", zdel="حذف دامنه", zdel_bad="❌ نام مطابقت نداشت. حذف لغو شد.",
+        cancel="انصراف", lang_t="زبان / Language", emo="ایموجی پرمیوم", home="صفحه اصلی", prev="صفحه قبل", next="صفحه بعد", adm="ادمین‌ها", adm_add="افزودن ادمین",
+        adm_ask="آیدی عددی تلگرام کاربر را بفرستید.\nکاربر می‌تواند آیدی خود را از @userinfobot بگیرد.", adm_ok="ادمین اضافه شد",
+        adm_bad="آیدی نامعتبر است (فقط عدد).", owner="مالک", chk="بررسی اتصال", chk_title="وضعیت اتصال به کلودفلر",
+        adm_note="ادمین‌ها به همهٔ حساب‌های کلودفلر ذخیره‌شده دسترسی دارند. فقط مالک می‌تواند ادمین اضافه یا حذف کند.", zdel="حذف دامنه", zdel_bad="❌ نام مطابقت نداشت. حذف لغو شد.",
         zdel_ask="⚠️ <b>حذف دامنه {}</b> از کلودفلر\nاین کار برگشت‌پذیر نیست و همهٔ رکوردها و تنظیمات پاک می‌شود.\nبرای تأیید، نام دقیق دامنه را تایپ و ارسال کنید:", design="حالت طراحی (شخصی‌سازی دکمه‌ها)", czm="دکمه‌های منوی پایین",
         cz_btn="شخصی‌سازی همین صفحه", cz_hint="روی هر دکمه یا متن بزنید تا رنگ و ایموجی همان یکی را جدا تغییر دهید. (📝 = ایموجی داخل متن)",
         c_style="رنگ", c_emoji="ایموجی", c_blue="آبی", c_green="سبز", c_red="قرمز", c_def="بدون رنگ",
@@ -54,7 +58,10 @@ T = {
         export="Export DNS", ua="Under Attack", dev="Dev mode", new="New record",
         e_content="Edit content", e_name="Edit name", e_ttl="Edit TTL", proxy="Proxy",
         delete="Delete", sure="Are you sure? This record will be deleted permanently.", yes="Yes, delete",
-        cancel="Cancel", lang_t="Language / زبان", emo="Premium emoji", zdel="Delete domain", zdel_bad="❌ Name did not match. Deletion cancelled.",
+        cancel="Cancel", lang_t="Language / زبان", emo="Premium emoji", home="Main page", prev="Previous page", next="Next page", adm="Admins", adm_add="Add admin",
+        adm_ask="Send the user's numeric Telegram ID.\nThey can get it from @userinfobot.", adm_ok="Admin added",
+        adm_bad="Invalid ID (numbers only).", owner="Owner", chk="Check connection", chk_title="Cloudflare connection status",
+        adm_note="Admins can access all saved Cloudflare accounts. Only the owner can add or remove admins.", zdel="Delete domain", zdel_bad="❌ Name did not match. Deletion cancelled.",
         zdel_ask="⚠️ <b>Delete domain {}</b> from Cloudflare\nThis cannot be undone; all records and settings will be removed.\nTo confirm, type the exact domain name:", design="Design mode (customize buttons)", czm="Bottom menu buttons",
         cz_btn="Customize this screen", cz_hint="Tap any button or text to change its color and emoji individually. (📝 = emoji inside text)",
         c_style="Color", c_emoji="Emoji", c_blue="Blue", c_green="Green", c_red="Red", c_def="No color",
@@ -75,6 +82,7 @@ LEVELS = ["essentially_off", "low", "medium", "high", "under_attack"]
 db = json.load(open(DBF)) if os.path.exists(DBF) else {"accounts": [], "lang": {}}
 save = lambda: json.dump(db, open(DBF, "w"), ensure_ascii=False, indent=1)
 lang = lambda uid: db["lang"].get(str(uid), "fa")
+isadmin = lambda uid: uid in ADMINS or uid in db.get("admins", [])
 t = lambda uid, k: T[lang(uid)][k]
 norm = lambda s: re.sub(r"^[^\w]+", "", s).strip()
 MENU = {norm(T[l][k]): v for l in T for k, v in (("m_acc", "acc"), ("m_zone", "zones"), ("m_add", "addtok"), ("m_set", "set"))}
@@ -114,6 +122,7 @@ def rb(text, style=None, emo=None, bid=None):
         if i and OK["btn"]: x["icon_custom_emoji_id"] = i
         else: x["text"] = f + " " + text if text else f
     if style: x["style"] = style
+    if not x["text"].strip(): x["text"] = "•"
     if bid: BUF.append((bid, x["text"] or (EMO[emo][1] if emo else "•"), "btn"))
     return x
 
@@ -147,14 +156,48 @@ ttltxt = lambda r: "auto" if r.get("ttl") == 1 else str(r.get("ttl"))
 chunk = lambda l, n: [l[i:i + n] for i in range(0, len(l), n)]
 
 
+def plain(p):
+    """Same payload without custom emoji (fallback when Telegram rejects them)."""
+    p = dict(p)
+    p["text"] = re.sub(r'<tg-emoji emoji-id="\d+">(.*?)</tg-emoji>', r"\1", p["text"])
+    rm = p.get("reply_markup") or {}
+    for key in ("inline_keyboard", "keyboard"):
+        if key in rm:
+            rm = {**rm, key: [[{k: v for k, v in bt.items() if k != "icon_custom_emoji_id"} for bt in row] for row in rm[key]]}
+    p["reply_markup"] = rm
+    return p
+
+
+async def send_menu(cid, uid, text):
+    p = dict(chat_id=cid, text=text, parse_mode="HTML", reply_markup=menu(uid))
+    if not (await tg("sendMessage", **p)).get("ok"):
+        await tg("sendMessage", **plain(p))
+
+
 async def show(cid, mid, text, markup):
     p = dict(chat_id=cid, text=text, parse_mode="HTML", reply_markup=markup,
              link_preview_options={"is_disabled": True})
-    if mid:
-        r = await tg("editMessageText", message_id=mid, **p)
-        if r.get("ok") or "not modified" in str(r):
+    for q in (p, plain(p)):
+        if mid:
+            r = await tg("editMessageText", message_id=mid, **q)
+            if r.get("ok") or "not modified" in str(r):
+                return
+        r = await tg("sendMessage", **q)
+        if r.get("ok"):
             return
-    await tg("sendMessage", **p)
+        print("send failed:", r.get("description"))
+
+
+async def ping(a):
+    t0 = time.monotonic()
+    try:
+        r = (await H.get(CF + "/zones?per_page=1", headers={"Authorization": f"Bearer {a['token']}"}, timeout=15)).json()
+    except Exception as ex:
+        return a["name"], False, type(ex).__name__, int((time.monotonic() - t0) * 1000)
+    ms = int((time.monotonic() - t0) * 1000)
+    if r.get("success"):
+        return a["name"], True, f"{(r.get('result_info') or {}).get('total_count', 0)} zones", ms
+    return a["name"], False, errtxt(r), ms
 
 
 async def probe(cid):
@@ -171,9 +214,17 @@ async def probe(cid):
 
 
 def recline(i, r):
-    px = " ☁️" if r.get("proxied") else ""
+    px = (" " + e("cloud")) if r.get("proxied") else ""
     return (f"<b>{i}.</b> <code>{r['type']}</code>  {html.escape(r['name'])}\n"
             f"      ↳ <code>{html.escape(str(r['content'])[:60])}</code>{px}")
+
+
+def pager(uid, p, tp, pre):
+    row = []
+    if p > 1: row.append(b(t(uid, "prev"), f"{pre}p:{p-1}"))
+    if tp > 1: row.append(b(f"{p}/{tp}", "noop"))
+    if p < tp: row.append(b(t(uid, "next"), f"{pre}n:{p+1}"))
+    return row
 
 
 async def view(uid, v):
@@ -190,7 +241,26 @@ async def view(uid, v):
         v = "set"
     if v == "cz1" and st.get("sel") is None:
         v = "cz"
+    if v == "adm" and uid not in ADMINS:
+        v = "set"
     CUR = v; BUF.clear()
+
+    if v == "home":
+        return t(uid, "welcome"), kb([])
+    if v == "adm":
+        extra = db.get("admins", [])
+        txt = (f"{e('user')} <b>{t(uid,'adm')}</b>\n\n"
+               + "\n".join(f"{e('crown')} <code>{i}</code> · {t(uid,'owner')}" for i in sorted(ADMINS))
+               + ("\n" + "\n".join(f"{e('user')} <code>{i}</code>" for i in extra) if extra else "")
+               + f"\n\n<i>{t(uid,'adm_note')}</i>")
+        rows = [[b(f"{t(uid,'delete')} {i}", f"ax:{i}", "danger", "trash")] for i in extra]
+        rows.append([b(t(uid, "adm_add"), "ad", "success", "plus")])
+        return txt, kb(rows + [bk("set")])
+    if v == "chk":
+        res = await asyncio.gather(*(ping(a) for a in db["accounts"]))
+        lines = [f"{e('green') if ok_ else e('red')} <b>{html.escape(n)}</b>\n      {html.escape(d)} · {ms}ms" for n, ok_, d, ms in res]
+        return (f"{e('bolt')} <b>{t(uid,'chk_title')}</b>\n\n" + ("\n".join(lines) or t(uid, "empty")),
+                kb([[b(t(uid, "chk"), "chk", "primary", "bolt")], bk("acc")]))
 
     if v == "cz":
         rows = chunk([b(("📝 " if k == "txt" else "") + lbl, f"cz1:{n}", "primary" if k == "btn" else None)
@@ -211,7 +281,7 @@ async def view(uid, v):
         return txt, kb(rows + [bk("cz")])
 
     if v == "set":
-        return f"{e('gear')} <b>{t(uid,'m_set')}</b>", kb([[b(t(uid, "lang") + "  🌍", "lang", "primary")],
+        return f"{e('gear')} <b>{t(uid,'m_set')}</b>", kb(([[b(t(uid, "adm"), "adm", "primary", "user")]] if uid in ADMINS else []) + [[b(t(uid, "lang"), "lang", "primary")],
                                                           [b(t(uid, "emo"), "emo", "primary", "bolt")],
                                                           [b(t(uid, "design") + (" ✅" if db.get("design") else ""), "design", "success" if db.get("design") else None, "edit")],
                                                           [b(t(uid, "czm"), "czm", "primary", "gear")]])
@@ -227,21 +297,25 @@ async def view(uid, v):
         return f"{e('plus')} {t(uid,'addtok')}", kb([bk("acc")])
 
     if v == "acc":
-        rows = [[b(a["name"], f"a:{i}", "primary", "cloud"), b("", f"x:{i}", "danger", "trash")]
+        rows = [[b(a["name"], f"a:{i}", "primary", "cloud"), b(t(uid, "delete"), f"x:{i}", "danger", "trash")]
                 for i, a in enumerate(db["accounts"])]
         rows.append([b(t(uid, "m_add"), "add", "success", "plus")])
+        if db["accounts"]: rows.append([b(t(uid, "chk"), "chk", "primary", "bolt")])
         return f"{e('cloud')} <b>{t(uid,'accs')}</b>\n" + ("" if db["accounts"] else t(uid, "empty")), kb(rows)
 
     if v == "zones":
-        j = await C(uid, "GET", "/zones?per_page=50")
-        zs = j.get("result") or []
-        st["zones"] = {x["id"]: x["name"] for x in zs}
-        txt = f"{e('globe')} <b>{t(uid,'zones')}</b> ({len(zs)})\n\n" + "\n".join(
-            f"{'🟢' if x['status']=='active' else '🟡'} <code>{html.escape(x['name'])}</code>" for x in zs)
+        p = st.setdefault("zpage", 1)
+        j = await C(uid, "GET", f"/zones?per_page=10&page={p}")
+        zs = j.get("result") or []; info = j.get("result_info") or {}; tp = info.get("total_pages") or 1
+        st.setdefault("zones", {}).update({x["id"]: x["name"] for x in zs})
+        txt = f"{e('globe')} <b>{t(uid,'zones')}</b> ({info.get('total_count', len(zs))})\n\n" + "\n".join(
+            f"{e('green') if x['status']=='active' else e('yellow')} <code>{html.escape(x['name'])}</code>" for x in zs)
         if not zs:
             txt += t(uid, "none") if j.get("success") else errtxt(j)
         rows = chunk([b(x["name"], f"z:{x['id']}", "primary", "globe") for x in zs], 2)
-        rows.append(bk("acc"))
+        pr = pager(uid, p, tp, "zg")
+        if pr: rows.append(pr)
+        rows.append(bk("home"))
         return txt, kb(rows)
 
     if v == "zone":
@@ -249,7 +323,7 @@ async def view(uid, v):
         s = {x["id"]: x["value"] for x in (await C(uid, "GET", f"/zones/{z}/settings")).get("result") or []}
         ua = s.get("security_level") == "under_attack"; dev = s.get("development_mode") == "on"
         txt = (f"{e('globe')} <b>{zn}</b>\n<blockquote>"
-               f"{'🟢' if zi.get('status')=='active' else '🟡'} {zi.get('status','?')} · {zi.get('plan',{}).get('name','')}\n"
+               f"{e('green') if zi.get('status')=='active' else e('yellow')} {zi.get('status','?')} · {zi.get('plan',{}).get('name','')}\n"
                f"{e('lock')} SSL: <code>{s.get('ssl','?')}</code>\n"
                f"{e('shield')} Security: <code>{s.get('security_level','?')}</code>\n"
                f"{e('dev')} Dev mode: {'ON' if dev else 'OFF'}\n"
@@ -268,9 +342,7 @@ async def view(uid, v):
         rs = j.get("result") or []; tp = (j.get("result_info") or {}).get("total_pages") or 1
         txt = f"{e('dns')} <b>{t(uid,'dns')}</b> · {zn}   ({p}/{tp})\n\n" + ("\n".join(recline(i, r) for i, r in enumerate(rs, 1)) or t(uid, "none"))
         rows = chunk([b(str(i), f"r:{r['id']}", "primary") for i, r in enumerate(rs, 1)], 4)
-        nav = []
-        if p > 1: nav.append(b("◀️", f"pg:{p-1}"))
-        if p < tp: nav.append(b("▶️", f"pg:{p+1}"))
+        nav = pager(uid, p, tp, "dg")
         if nav: rows.append(nav)
         rows.append([b(t(uid, "new"), "new", "success", "plus")])
         rows.append(bk("zone"))
@@ -280,10 +352,10 @@ async def view(uid, v):
         r = (await C(uid, "GET", f"/zones/{z}/dns_records/{st['rec']}")).get("result") or {}
         txt = (f"{e('dns')} <b>{r.get('type')}</b>\n<blockquote>"
                f"{e('tag')} <code>{html.escape(r.get('name',''))}</code>\n"
-               f"🎯 <code>{html.escape(str(r.get('content','')))}</code>\n"
-               f"⏱ TTL: {ttltxt(r)}\n☁️ Proxy: {'ON' if r.get('proxied') else 'OFF'}</blockquote>")
+               f"{e('target')} <code>{html.escape(str(r.get('content','')))}</code>\n"
+               f"{e('time')} TTL: {ttltxt(r)}\n{e('cloud')} Proxy: {'ON' if r.get('proxied') else 'OFF'}</blockquote>")
         if v == "dq":
-            return txt + f"\n⚠️ {t(uid,'sure')}", kb([[b(t(uid, "yes"), "dd", "danger", "trash"), b(t(uid, "cancel"), "rec")]])
+            return txt + f"\n{e('warn')} {t(uid,'sure')}", kb([[b(t(uid, "yes"), "dd", "danger", "trash"), b(t(uid, "cancel"), "rec")]])
         row2 = [b(t(uid, "e_ttl"), "ed:ttl", None, "edit")]
         if r.get("type") in ("A", "AAAA", "CNAME"):
             row2.append(b(t(uid, "proxy"), "px", "success" if r.get("proxied") else None, "cloud"))
@@ -308,9 +380,9 @@ async def view(uid, v):
     if v == "fw":
         j = await C(uid, "GET", f"/zones/{z}/firewall/access_rules/rules?per_page=10")
         rs = j.get("result") or []
-        icon = {"block": "⛔", "whitelist": "✅", "challenge": "🧩", "js_challenge": "🧩", "managed_challenge": "🧩"}
+        icon = lambda m: e("ban") if m == "block" else e("ok") if m == "whitelist" else e("puzzle")
         txt = f"{e('ban')} <b>{t(uid,'fw')}</b> · {zn}\n\n" + ("\n".join(
-            f"<b>{i}.</b> {icon.get(r['mode'],'•')} <code>{html.escape(r['configuration']['value'])}</code> <i>{html.escape(r.get('notes') or '')}</i>"
+            f"<b>{i}.</b> {icon(r['mode'])} <code>{html.escape(r['configuration']['value'])}</code> <i>{html.escape(r.get('notes') or '')}</i>"
             for i, r in enumerate(rs, 1)) or (t(uid, "none") if j.get("success") else errtxt(j)))
         rows = chunk([b(f"🗑 {i}", f"fd:{r['id']}", "danger") for i, r in enumerate(rs, 1)], 5)
         rows.append([b(t(uid, "block"), "fn", "success", "plus")])
@@ -328,6 +400,8 @@ def uniq(buf):
 
 async def render(uid, cid, mid, v):
     text, markup = await view(uid, v)
+    if CUR != "home" and not any(bt.get("callback_data") == "home" for row in markup["inline_keyboard"] for bt in row):
+        markup["inline_keyboard"].append([b(t(uid, "home"), "home", "primary", "cloud")])
     if db.get("design") and CUR not in ("cz", "cz1", "ask"):
         st = S[uid]; st["scr"] = uniq(BUF); st["scr_v"] = CUR; st["sel"] = None
         markup["inline_keyboard"].append([{"text": "🎨 " + t(uid, "cz_btn"), "callback_data": "cz", "style": "primary"}])
@@ -335,12 +409,12 @@ async def render(uid, cid, mid, v):
 
 
 async def remenu(cid, uid):
-    await tg("sendMessage", chat_id=cid, text="🎨 ✅", reply_markup=menu(uid))
+    await send_menu(cid, uid, "🎨 ✅")
 
 
 async def cb(q):
     uid = q["from"]["id"]
-    if uid not in ADMINS:
+    if not isadmin(uid):
         return
     m = q["message"]; cid = m["chat"]["id"]; st = S.setdefault(uid, {}); st["wait"] = None
     a, _, x = q["data"].partition(":"); z = st.get("zone"); note = None; v = "acc"
@@ -354,7 +428,7 @@ async def cb(q):
         await tg("answerCallbackQuery", callback_query_id=q["id"]); return
     if a == "lang":
         db["lang"][str(uid)] = "en" if lang(uid) == "fa" else "fa"; save()
-        await tg("sendMessage", chat_id=cid, text=t(uid, "welcome"), parse_mode="HTML", reply_markup=menu(uid))
+        await send_menu(cid, uid, t(uid, "welcome"))
         v = "set"
     elif a == "emoset":
         st.update(wait="emo", back="emo", prompt=t(uid, "emo_ask") + "\n\n" + " ".join(EMO[k][1] for k in EMO)); v = "ask"
@@ -382,22 +456,29 @@ async def cb(q):
         v = "cz1"
     elif a == "ce":
         st.update(wait="czemo", prompt=t(uid, "c_ask"), back="cz1"); v = "ask"
-    elif a in ("cz", "ask", "emo", "set", "acc", "zones", "ssl", "sec", "tog", "fw", "zone", "rec", "dq"):
+    elif a in ("home", "adm", "chk", "cz", "ask", "emo", "set", "acc", "zones", "ssl", "sec", "tog", "fw", "zone", "rec", "dq"):
         v = a
     elif a == "dns":
         st["page"] = 1; v = "dns"
     elif a == "add":
         st["wait"] = "token"; v = "addtok"
     elif a == "a":
-        st["acc"] = int(x); st.pop("zone", None); v = "zones"
+        st["acc"] = int(x); st.pop("zone", None); st["zones"] = {}; st["zpage"] = 1; v = "zones"
     elif a == "x":
         del db["accounts"][int(x)]; save(); st.pop("acc", None); st.pop("zone", None); v = "acc"
     elif a == "z":
         st["zone"] = x; v = "zone"
     elif a == "r":
         st["rec"] = x; v = "rec"
-    elif a == "pg":
+    elif a in ("dgp", "dgn"):
         st["page"] = int(x); v = "dns"
+    elif a in ("zgp", "zgn"):
+        st["zpage"] = int(x); v = "zones"
+    elif a == "ad" and uid in ADMINS:
+        st.update(wait="adm", prompt=t(uid, "adm_ask"), back="adm"); v = "ask"
+    elif a == "ax" and uid in ADMINS:
+        if int(x) in db.get("admins", []): db["admins"].remove(int(x)); save()
+        v = "adm"
     elif a == "px":
         r = (await C(uid, "GET", R + rec))["result"]
         note = ok(await C(uid, "PATCH", R + rec, json={"proxied": not r["proxied"]})); v = "rec"
@@ -437,7 +518,7 @@ async def cb(q):
 
 async def msg(m):
     uid = m["from"]["id"]
-    if uid not in ADMINS:
+    if not isadmin(uid):
         return
     cid = m["chat"]["id"]; st = S.setdefault(uid, {}); txt = (m.get("text") or "").strip()
     ids = [en for en in m.get("entities", []) if en["type"] == "custom_emoji"]
@@ -464,7 +545,7 @@ async def msg(m):
     err = lambda j: tg("sendMessage", chat_id=cid, text="❌ " + errtxt(j))
 
     if txt.startswith("/start"):
-        await tg("sendMessage", chat_id=cid, text=t(uid, "welcome"), parse_mode="HTML", reply_markup=menu(uid)); return
+        await send_menu(cid, uid, t(uid, "welcome")); return
     if n in MENU:
         v = MENU[n]
         if v == "zones" and "acc" not in st:
@@ -511,6 +592,15 @@ async def msg(m):
                 await tg("sendMessage", chat_id=cid, text="✅ " + name + " — " + t(uid, "done")); st.pop("zone", None); v = "zones"
             else:
                 await err(j); v = "zone"
+    elif w == "adm":
+        if uid in ADMINS and txt.isdigit():
+            n = int(txt)
+            if n not in ADMINS and n not in db.setdefault("admins", []): db["admins"].append(n); save()
+            await tg("sendMessage", chat_id=cid, text="✅ " + t(uid, "adm_ok"))
+            await send_menu(n, n, T["fa"]["welcome"])  # silently ignored if they never started the bot
+        else:
+            await tg("sendMessage", chat_id=cid, text="❌ " + t(uid, "adm_bad"))
+        v = "adm"
     elif w == "fw":
         p = txt.split(); mode = "block"
         if len(p) > 1 and p[0].lower() in ("allow", "block", "challenge"):
@@ -523,7 +613,7 @@ async def msg(m):
         if not j.get("success"): await err(j)
         v = "fw"
     else:
-        await tg("sendMessage", chat_id=cid, text=t(uid, "welcome"), parse_mode="HTML", reply_markup=menu(uid)); return
+        await send_menu(cid, uid, t(uid, "welcome")); return
     await render(uid, cid, None, v)
 
 
