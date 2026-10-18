@@ -97,7 +97,17 @@ s_files() {
   if [ "$HAVE_SELF" -eq 1 ] && [ -f "$src" ]; then cp "$src" "$DIR/cfbot.py"; else curl -fsSL "$RAW/cfbot.py" -o "$DIR/cfbot.py"; fi
   chown -R "$SVCUSER:$SVCUSER" "$DIR"
 }
-s_venv()  { python3 -m venv "$DIR/venv"; "$DIR/venv/bin/pip" install -q --upgrade pip httpx; chown -R "$SVCUSER:$SVCUSER" "$DIR"; }
+s_venv() {
+  local py="$DIR/venv/bin/python"
+  command -v python3; python3 --version
+  rm -rf "$DIR/venv"
+  python3 -m venv "$DIR/venv"
+  if ! "$py" -m pip --version; then   # venv created without pip: bootstrap it
+    "$py" -m ensurepip --upgrade || curl -fsSL https://bootstrap.pypa.io/get-pip.py | "$py"
+  fi
+  "$py" -m pip install -q --upgrade pip httpx
+  chown -R "$SVCUSER:$SVCUSER" "$DIR"
+}
 s_service() {
   cat >"$UNIT" <<EOF
 [Unit]
