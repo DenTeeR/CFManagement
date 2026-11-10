@@ -1,0 +1,13 @@
+# runtime data: contains Cloudflare tokens — never commit
+data.json
+data.json.*
+audit.log
+.env
+*.bak
+*.tmp
+
+# Python
+__pycache__/
+.pytest_cache/
+venv/
+.venv/

@@ -3,11 +3,12 @@
 # Usage:  curl -fsSL https://raw.githubusercontent.com/DenTeeR/CFManagement/main/install.sh | sudo bash
 set -Eeuo pipefail
 
-APP="CF Control"; DEV="DenTeeR"; VER="2.0"
+APP="CF Control"; DEV="DenTeeR"; VER="3.0"
 REPO="${CFBOT_REPO:-DenTeeR/CFManagement}"; BRANCH="${CFBOT_BRANCH:-main}"
 RAW="https://raw.githubusercontent.com/${REPO}/${BRANCH}"
 DIR="/opt/cfbot"; ENVF="/etc/cfbot.env"; SVC="cfbot"; SVCUSER="cfbot"
-UNIT="/etc/systemd/system/${SVC}.service"; BIN="/usr/local/bin/cfbot"; LOG="/tmp/cfbot-install.log"
+UNIT="/etc/systemd/system/${SVC}.service"; BIN="/usr/local/bin/cfbot"; LOG="/var/log/cfbot-install.log"
+HTTPX="httpx==0.28.1"   # used only when requirements.txt cannot be fetched
 SELF="${BASH_SOURCE[0]:-$0}"
 HAVE_SELF=0; [ -f "$SELF" ] && grep -q "CF Control installer" "$SELF" 2>/dev/null && HAVE_SELF=1
 STEP=0; TOTAL=0; BOT_USERNAME=""
@@ -93,9 +94,20 @@ need_root() {
 s_apt()   { export DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a; apt-get update -y; apt-get install -y python3 python3-venv python3-pip curl ca-certificates; }
 s_user()  { id "$SVCUSER" >/dev/null 2>&1 || useradd --system --home "$DIR" --shell /usr/sbin/nologin "$SVCUSER"; mkdir -p "$DIR"; }
 s_files() {
-  local src; src="$(dirname "$SELF")/cfbot.py"
-  if [ "$HAVE_SELF" -eq 1 ] && [ -f "$src" ]; then cp "$src" "$DIR/cfbot.py"; else curl -fsSL "$RAW/cfbot.py" -o "$DIR/cfbot.py"; fi
+  local src; src="$(dirname "$SELF")"
+  if [ "$HAVE_SELF" -eq 1 ] && [ -f "$src/cfbot.py" ]; then
+    cp "$src/cfbot.py" "$DIR/cfbot.py"
+    if [ -f "$src/requirements.txt" ]; then cp "$src/requirements.txt" "$DIR/requirements.txt"; fi
+  else
+    curl -fsSL "$RAW/cfbot.py" -o "$DIR/cfbot.py"
+    curl -fsSL "$RAW/requirements.txt" -o "$DIR/requirements.txt" || true
+  fi
   chown -R "$SVCUSER:$SVCUSER" "$DIR"
+}
+s_deps() {  # pinned versions. Token encryption (cryptography) is optional: without it the bot still runs
+  local py="$DIR/venv/bin/python"
+  if [ -f "$DIR/requirements.txt" ] && "$py" -m pip install -q -r "$DIR/requirements.txt"; then return 0; fi
+  "$py" -m pip install -q "$HTTPX"
 }
 s_venv() {
   local py="$DIR/venv/bin/python"
@@ -105,8 +117,21 @@ s_venv() {
   if ! "$py" -m pip --version; then   # venv created without pip: bootstrap it
     "$py" -m ensurepip --upgrade || curl -fsSL https://bootstrap.pypa.io/get-pip.py | "$py"
   fi
-  "$py" -m pip install -q --upgrade pip httpx
+  "$py" -m pip install -q --upgrade pip
+  s_deps
   chown -R "$SVCUSER:$SVCUSER" "$DIR"
+}
+s_secure() {  # private data directory, and a key so saved Cloudflare tokens are encrypted on disk
+  local f key
+  chown -R "$SVCUSER:$SVCUSER" "$DIR"; chmod 700 "$DIR"
+  for f in "$DIR/data.json" "$DIR/audit.log"; do
+    if [ -f "$f" ]; then chmod 600 "$f"; fi
+  done
+  if ! grep -q '^DATA_KEY=' "$ENVF" 2>/dev/null; then
+    key=$("$DIR/venv/bin/python" -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())' 2>/dev/null || true)
+    if [ -n "$key" ]; then ( umask 077; printf 'DATA_KEY=%s\n' "$key" >>"$ENVF" ); echo "encryption key created"; else echo "cryptography not available: tokens stay unencrypted"; fi
+  fi
+  chmod 600 "$ENVF"
 }
 s_service() {
   cat >"$UNIT" <<EOF
@@ -119,6 +144,8 @@ Wants=network-online.target
 User=$SVCUSER
 WorkingDirectory=$DIR
 EnvironmentFile=$ENVF
+Environment=PYTHONUNBUFFERED=1
+UMask=0077
 ExecStart=$DIR/venv/bin/python $DIR/cfbot.py
 Restart=always
 RestartSec=3
@@ -137,13 +164,34 @@ s_cli() {
   if [ "$HAVE_SELF" -eq 1 ] && [ "$SELF" -ef "$BIN" ]; then return 0; fi
   if [ "$HAVE_SELF" -eq 1 ]; then install -m 755 "$SELF" "$BIN"; else curl -fsSL "$RAW/install.sh" -o "$BIN" && chmod 755 "$BIN"; fi
 }
-s_start() { systemctl restart "$SVC"; sleep 3; systemctl is-active --quiet "$SVC"; }
+s_start() {  # must be up shortly after the restart and still up a few seconds later (catches crash loops)
+  systemctl restart "$SVC"; sleep 2; systemctl is-active --quiet "$SVC"; sleep 3; systemctl is-active --quiet "$SVC"
+}
 s_update() {
   curl -fsSL "$RAW/cfbot.py" -o "$DIR/cfbot.py.new"
   python3 -c "import ast,sys; ast.parse(open(sys.argv[1], encoding='utf-8').read())" "$DIR/cfbot.py.new"
-  [ -f "$DIR/cfbot.py" ] && cp "$DIR/cfbot.py" "$DIR/cfbot.py.bak"
-  mv "$DIR/cfbot.py.new" "$DIR/cfbot.py"; chown -R "$SVCUSER:$SVCUSER" "$DIR"
+  # keep the running version and its data, so a bad update can be undone
+  if [ -f "$DIR/cfbot.py" ]; then cp "$DIR/cfbot.py" "$DIR/cfbot.py.bak"; fi
+  if [ -f "$DIR/data.json" ]; then cp -p "$DIR/data.json" "$DIR/data.json.bak"; fi
+  mv "$DIR/cfbot.py.new" "$DIR/cfbot.py"
+  curl -fsSL "$RAW/requirements.txt" -o "$DIR/requirements.txt" || true
+  s_deps
+  s_service
+  s_secure
   curl -fsSL "$RAW/install.sh" -o "$BIN.new" && chmod 755 "$BIN.new" && mv "$BIN.new" "$BIN" || true
+}
+s_restart_safe() {  # start the new version; if it does not stay up, put the previous one back
+  if s_start; then return 0; fi
+  echo "The new version did not start. Its last log lines:"
+  journalctl -u "$SVC" -n 8 --no-pager -o cat || true
+  if [ -f "$DIR/cfbot.py.bak" ]; then
+    cp "$DIR/cfbot.py.bak" "$DIR/cfbot.py"
+    if [ -f "$DIR/data.json.bak" ]; then cp -p "$DIR/data.json.bak" "$DIR/data.json"; fi
+    chown -R "$SVCUSER:$SVCUSER" "$DIR"
+    systemctl restart "$SVC" || true
+    echo "Rolled back to the previous version."
+  fi
+  return 1
 }
 
 # ───────────────────────── config ─────────────────────────
@@ -169,7 +217,14 @@ configure() {
     [[ "$ADMIN_IDS" =~ ^[0-9]+(,[0-9]+)*$ ]] || die "ADMIN_IDS is invalid."
   fi
 }
-write_env() { ( umask 077; printf 'BOT_TOKEN=%s\nADMIN_IDS=%s\n' "$BOT_TOKEN" "$ADMIN_IDS" >"$ENVF" ); chmod 600 "$ENVF"; }
+write_env() {  # every other line survives a rewrite, above all DATA_KEY: without it saved tokens cannot be read
+  local rest=""
+  if [ -f "$ENVF" ]; then rest=$(grep -vE '^(BOT_TOKEN|ADMIN_IDS)=' "$ENVF" || true); fi
+  ( umask 077
+    printf 'BOT_TOKEN=%s\nADMIN_IDS=%s\n' "$BOT_TOKEN" "$ADMIN_IDS" >"$ENVF"
+    if [ -n "$rest" ]; then printf '%s\n' "$rest" >>"$ENVF"; fi )
+  chmod 600 "$ENVF"
+}
 
 # ───────────────────────── commands ─────────────────────────
 do_install() {
@@ -183,11 +238,12 @@ do_install() {
   [ -n "${BOT_USERNAME:-}" ] || check_token "$BOT_TOKEN" || true
   write_env
   section "Installing"
-  TOTAL=7; STEP=0
+  TOTAL=8; STEP=0
   run "Installing system packages"      s_apt
   run "Creating service user"           s_user
   run "Deploying bot files"             s_files
   run "Building Python environment"     s_venv
+  run "Securing data and tokens"        s_secure
   run "Registering systemd service"     s_service
   run "Installing 'cfbot' manager"      s_cli
   run "Starting the bot"                s_start
@@ -204,7 +260,7 @@ status_line() {
   [ -f "$ENVF" ] && printf '   %s·  admins: %s%s' "$DIM" "$(grep '^ADMIN_IDS=' "$ENVF" | cut -d= -f2)" "$R"; echo
 }
 
-do_update() { need_root update; : >"$LOG"; TOTAL=2; STEP=0; run "Fetching latest version" s_update; run "Restarting the bot" s_start; ok "Updated."; }
+do_update() { need_root update; : >"$LOG"; TOTAL=2; STEP=0; run "Fetching latest version" s_update; run "Restarting the bot" s_restart_safe; ok "Updated."; }
 do_config() {
   need_root config; BOT_TOKEN=""; ADMIN_IDS=""; banner; configure; write_env
   TOTAL=1; STEP=0; : >"$LOG"; run "Restarting the bot" s_start
@@ -214,7 +270,11 @@ do_uninstall() {
   need_root uninstall
   confirm "Remove CF Control completely?" || { warn "Cancelled."; return 0; }
   local keep=0; confirm "Keep your data (accounts / design) in a backup?" && keep=1
-  [ "$keep" -eq 1 ] && [ -f "$DIR/data.json" ] && { cp "$DIR/data.json" "/root/cfbot-data-backup.json"; ok "Backup: /root/cfbot-data-backup.json"; }
+  if [ "$keep" -eq 1 ] && [ -f "$DIR/data.json" ]; then
+    ( umask 077; cp "$DIR/data.json" /root/cfbot-data-backup.json; cp "$ENVF" /root/cfbot-env-backup 2>/dev/null || true )
+    ok "Backup: /root/cfbot-data-backup.json"
+    ok "Its encryption key: /root/cfbot-env-backup (keep both together)"
+  fi
   systemctl disable --now "$SVC" 2>/dev/null || true
   rm -rf "$UNIT" "$DIR" "$ENVF"; systemctl daemon-reload
   userdel "$SVCUSER" 2>/dev/null || true
