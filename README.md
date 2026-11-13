@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="assets/banner.jpg" alt="CF Control — Cloudflare management inside Telegram" width="100%">
+
 # ☁️ CF Control
 
 **Manage all your Cloudflare accounts from inside Telegram.**
@@ -16,7 +18,21 @@ Developed by **DenTeeR**
 
 ---
 
+## 📸 Preview
+
+<div align="center">
+
+<img src="assets/preview.jpg" alt="CF Control bot preview: zone screen and DNS record screen" width="100%">
+
+</div>
+
 ## ✨ Features
+
+<div align="center">
+
+<img src="assets/features.jpg" alt="CF Control capabilities: DNS, SSL & firewall, quick actions, multi-account, admin access, customization" width="100%">
+
+</div>
 
 **Accounts & zones**
 - 🔑 Multiple Cloudflare accounts (API tokens), switch instantly, connection check
@@ -178,6 +194,7 @@ CFManagement/
 ├── cfbot.py           # the bot (single file)
 ├── requirements.txt   # pinned dependencies
 ├── tests/             # pytest suite (fake Telegram + fake Cloudflare)
+├── assets/            # README images
 ├── .github/workflows/ # CI
 ├── README.md
 ├── LICENSE
